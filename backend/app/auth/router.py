@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from . import models, schemas
 from .deps import get_current_user, require_roles
+from .refresh import issue_refresh_token, revoke_refresh_family, rotate_refresh_token
 from .security import (
     DUMMY_HASH,
     create_access_token,
@@ -49,17 +50,14 @@ def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    # Le formulaire OAuth2 s'appelle "username" : chez nous, c'est l'email.
     email = form.username.lower()
     user = db.scalar(select(models.User).where(models.User.email == email))
 
-    # Meme travail (une verification Argon2) que le compte existe ou non
     password_hash = user.password_hash if user else DUMMY_HASH
     password_ok = len(form.password) <= 128 and verify_password(
         form.password, password_hash
     )
 
-    # Meme message pour : email inconnu, mauvais mot de passe, compte inactif
     if user is None or not password_ok or not user.is_active:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
@@ -67,7 +65,38 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return schemas.Token(access_token=create_access_token(user.id, user.role))
+    refresh = issue_refresh_token(db, user.id)
+    db.commit()
+    return schemas.Token(
+        access_token=create_access_token(user.id, user.role),
+        refresh_token=refresh,
+    )
+
+
+@router.post("/refresh", response_model=schemas.Token)
+def refresh(data: schemas.RefreshRequest, db: Session = Depends(get_db)):
+    result = rotate_refresh_token(db, data.refresh_token)
+    if result is None:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Jeton de rafraichissement invalide."
+        )
+
+    user_id, new_refresh = result
+    user = db.get(models.User, user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Jeton de rafraichissement invalide."
+        )
+    return schemas.Token(
+        access_token=create_access_token(user.id, user.role),
+        refresh_token=new_refresh,
+    )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(data: schemas.RefreshRequest, db: Session = Depends(get_db)):
+    # Meme reponse que le jeton existe ou non : aucune information donnee
+    revoke_refresh_family(db, data.refresh_token)
 
 
 @router.get("/me", response_model=schemas.UserRead)
@@ -77,5 +106,4 @@ def me(user: models.User = Depends(get_current_user)):
 
 @router.get("/admin/ping")
 def admin_ping(user: models.User = Depends(require_roles("admin"))):
-    # Endpoint temporaire pour prouver que le RBAC fonctionne
     return {"message": "Bienvenue, admin."}
