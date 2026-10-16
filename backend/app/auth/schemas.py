@@ -20,3 +20,7 @@ class UserRead(BaseModel):
     role: str
     is_email_verified: bool
     created_at: datetime
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
