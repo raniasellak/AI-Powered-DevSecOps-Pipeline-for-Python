@@ -1,0 +1,16 @@
+# Secrets : jamais dans l'image
+.env
+*.env
+!.env.example
+
+# Environnement local et fichiers inutiles
+.venv/
+__pycache__/
+*.pyc
+dev.db
+.git/
+.github/
+.vscode/
+.idea/
+docs/
+tests/
