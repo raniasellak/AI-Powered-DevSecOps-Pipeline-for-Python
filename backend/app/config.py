@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     refresh_token_expire_days: int = 7
 
-    model_config = SettingsConfigDict(env_file=".env")
+    # extra="ignore" : .env contient aussi des variables pour docker-compose
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()
