@@ -48,19 +48,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Checkov
+        run: pip install checkov
+
       - name: Run Checkov on Dockerfile
-        uses: bridgecrewio/checkov-action@v12
-        with:
-          file: backend/Dockerfile
-          framework: dockerfile
-          soft_fail: true
+        run: checkov -f backend/Dockerfile --framework dockerfile --soft-fail
 
       - name: Run Checkov on docker-compose
-        uses: bridgecrewio/checkov-action@v12
-        with:
-          file: docker-compose.yml
-          framework: yaml
-          soft_fail: true
+        run: checkov -f docker-compose.yml --framework yaml --soft-fail
 
   # ------------------------------------------------------------------
   # 3. Build Docker image
