@@ -83,7 +83,14 @@ jobs:
             -e DATABASE_URL=sqlite:///./zap.db \
             -p 8000:8000 \
             invoicepay-api:${{ github.sha }}
-          sleep 8
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs api
+          exit 1
 
   # ------------------------------------------------------------------
   # 4. OWASP ZAP — DAST scan
@@ -104,23 +111,23 @@ jobs:
             -e DATABASE_URL=sqlite:///./zap.db \
             -p 8000:8000 \
             invoicepay-api:zap
-          sleep 10
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs api
+          exit 1
 
       - name: ZAP Baseline Scan
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: "http://localhost:8000"
+          target: "http://localhost:8000/health"
           rules_file_name: ".github/zap-rules.tsv"
           fail_action: false
-          artifact_name: zap-report
-
-      - name: Upload ZAP report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: zap-report
-          path: zap_report.html
+          artifact_name: zap-report-${{ github.run_id }}
 
   # ------------------------------------------------------------------
   # 5. CD — Déploiement staging (après ZAP)
