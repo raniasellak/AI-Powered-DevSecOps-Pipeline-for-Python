@@ -2,9 +2,14 @@ name: P3 – DevSecOps Pipeline
 
 on:
   push:
-    branches: ["p3-invoices-history", "main"]
+    branches: ["p3-invoices-history", "main", "feature/p3-devsecops-pipeline"]
   pull_request:
     branches: ["main"]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   # ------------------------------------------------------------------
@@ -104,10 +109,13 @@ jobs:
       - name: ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: "http://localhost:8000"
+          target: "http://localhost:8000/docs"
           rules_file_name: ".github/zap-rules.tsv"
           fail_action: false
+          issue_title: "ZAP Baseline Scan Report"
           artifact_name: zap-report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
