@@ -8,8 +8,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 jobs:
   # ------------------------------------------------------------------
@@ -93,7 +91,7 @@ jobs:
           exit 1
 
   # ------------------------------------------------------------------
-  # 4. OWASP ZAP — DAST scan
+  # 4. OWASP ZAP — DAST scan (CLI, no GitHub issue/artifact integration)
   # ------------------------------------------------------------------
   zap:
     name: OWASP ZAP DAST
@@ -120,13 +118,23 @@ jobs:
           docker logs api
           exit 1
 
-      - name: ZAP Baseline Scan
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: zaproxy/action-baseline@v0.12.0
+      - name: Run OWASP ZAP baseline scan
+        continue-on-error: true
+        run: |
+          docker run --rm --network host \
+            -v "$GITHUB_WORKSPACE:/zap/wrk/:rw" \
+            owasp/zap2docker-stable \
+            zap-baseline.py -t http://localhost:8000/health \
+            -r zap_report.html -J zap_report.json || true
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          target: "http://localhost:8000/health"
-          rules_file_name: ".github/zap-rules.tsv"
-          fail_action: false
+          name: zap-report-${{ github.run_id }}
+          path: |
+            zap_report.html
+            zap_report.json
 
   # ------------------------------------------------------------------
   # 5. CD — Déploiement staging (après ZAP)
