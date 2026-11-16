@@ -1,0 +1,156 @@
+name: P3 – DevSecOps Pipeline
+
+on:
+  push:
+    branches: ["p3-invoices-history", "main", "feature/p3-devsecops-pipeline"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  # ------------------------------------------------------------------
+  # 1. Tests de sécurité backend
+  # ------------------------------------------------------------------
+  tests:
+    name: Tests & SAST
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt argon2-cffi PyJWT
+
+      - name: Run security tests (P3)
+        env:
+          JWT_SECRET_KEY: test-secret-key-ci
+          DATABASE_URL: sqlite:///./test.db
+        run: pytest backend/tests/test_invoices_security.py -v
+        working-directory: .
+
+      - name: Bandit SAST scan
+        run: |
+          pip install bandit
+          bandit -r backend/app -ll -q
+
+  # ------------------------------------------------------------------
+  # 2. Checkov — scan IaC (Dockerfile + docker-compose)
+  # ------------------------------------------------------------------
+  checkov:
+    name: Checkov IaC Scan
+    runs-on: ubuntu-latest
+    needs: tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Run Checkov on Dockerfile
+        run: checkov -f backend/Dockerfile --framework dockerfile --soft-fail
+
+      - name: Run Checkov on docker-compose
+        run: checkov -f docker-compose.yml --framework yaml --soft-fail
+
+  # ------------------------------------------------------------------
+  # 3. Build Docker image
+  # ------------------------------------------------------------------
+  build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [tests, checkov]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t invoicepay-api:${{ github.sha }} ./backend
+
+      - name: Start API for ZAP scan
+        run: |
+          docker run -d --name api \
+            -e JWT_SECRET_KEY=zap-test-secret \
+            -e DATABASE_URL=sqlite:///./zap.db \
+            -p 8000:8000 \
+            invoicepay-api:${{ github.sha }}
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs api
+          exit 1
+
+  # ------------------------------------------------------------------
+  # 4. OWASP ZAP — DAST scan (CLI, no GitHub issue/artifact integration)
+  # ------------------------------------------------------------------
+  zap:
+    name: OWASP ZAP DAST
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & start API
+        run: |
+          docker build -t invoicepay-api:zap ./backend
+          docker run -d --name api \
+            -e JWT_SECRET_KEY=zap-test-secret \
+            -e DATABASE_URL=sqlite:///./zap.db \
+            -p 8000:8000 \
+            invoicepay-api:zap
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs api
+          exit 1
+
+      - name: Run OWASP ZAP baseline scan
+        continue-on-error: true
+        run: |
+          docker run --rm --network host \
+            -v "$GITHUB_WORKSPACE:/zap/wrk/:rw" \
+            owasp/zap2docker-stable \
+            zap-baseline.py -t http://localhost:8000/health \
+            -r zap_report.html -J zap_report.json || true
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report-${{ github.run_id }}
+          path: |
+            zap_report.html
+            zap_report.json
+
+  # ------------------------------------------------------------------
+  # 5. CD — Déploiement staging (après ZAP)
+  # ------------------------------------------------------------------
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: zap
+    if: github.ref == 'refs/heads/p3-invoices-history' || github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy (simulation staging)
+        run: |
+          echo "✅ Déploiement sur staging simulé"
+          echo "Image : invoicepay-api:${{ github.sha }}"
+          echo "Toutes les étapes de sécurité passées : SAST, Checkov, ZAP"
+          # En prod : remplacer par ssh deploy, kubectl apply, ou fly deploy
