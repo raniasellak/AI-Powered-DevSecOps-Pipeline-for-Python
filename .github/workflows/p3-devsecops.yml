@@ -107,15 +107,13 @@ jobs:
           sleep 10
 
       - name: ZAP Baseline Scan
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: "http://localhost:8000/docs"
+          target: "http://localhost:8000"
           rules_file_name: ".github/zap-rules.tsv"
           fail_action: false
-          issue_title: "ZAP Baseline Scan Report"
           artifact_name: zap-report
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
