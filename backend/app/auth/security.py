@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt  # PyJWT
 from argon2 import PasswordHasher
@@ -29,7 +29,7 @@ DUMMY_HASH = hash_password("mot-de-passe-factice-pour-uniformiser-le-temps")
 
 
 def create_access_token(user_id: uuid.UUID, role: str) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
         "role": role,

@@ -1,5 +1,20 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+
+# Environnements
+.venv/
+venv/
+
+# Variables et bases de données
 .env
-dev.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Tests et qualité
+.pytest_cache/
+.ruff_cache/
+
+# Rapports générés
+reports/
